@@ -70,8 +70,9 @@ library
 
     -- LANGUAGE extensions used by modules in this package.
     default-extensions:
-        NamedFieldPuns
         DuplicateRecordFields
+        GeneralizedNewtypeDeriving
+        NamedFieldPuns
         OverloadedRecordDot
         OverloadedStrings
     -- other-extensions:
@@ -103,8 +104,9 @@ executable quad
 
     -- LANGUAGE extensions used by modules in this package.
     default-extensions:
-        NamedFieldPuns
         DuplicateRecordFields
+        GeneralizedNewtypeDeriving
+        NamedFieldPuns
         OverloadedRecordDot
         OverloadedStrings
     -- other-extensions:
@@ -130,8 +132,9 @@ test-suite quad-test
 
     -- Modules included in this executable, other than Main.
     default-extensions:
-        NamedFieldPuns
         DuplicateRecordFields
+        GeneralizedNewtypeDeriving
+        NamedFieldPuns
         OverloadedRecordDot
         OverloadedStrings
     -- other-modules:
