@@ -1,8 +1,7 @@
 module Core where
 
-import Docker
+import qualified Docker
 import RIO
-import qualified RIO.List as List
 import qualified RIO.Map as Map
 import qualified RIO.NonEmpty as NE
 
@@ -12,21 +11,22 @@ newtype Pipeline = Pipeline {steps :: NonEmpty Step}
 data Step = Step
   { name :: StepName
   , commands :: NonEmpty Text
-  , image :: Image
+  , image :: Docker.Image
   }
   deriving (Eq, Show)
 
 newtype StepName = StepName Text
   deriving (Eq, Show, Ord)
-data StepResult = StepFailed ContainerExitCode | StepSucceeded
+
+data StepResult = StepFailed Docker.ContainerExitCode | StepSucceeded
   deriving (Eq, Show)
 
 -- NOTE: Why not record syntax (getter for free)?
 stepNameToText :: StepName -> Text
 stepNameToText (StepName text) = text
 
-imageToText :: Image -> Text
-imageToText (Image text) = text
+imageToText :: Docker.Image -> Text
+imageToText (Docker.Image text) = text
 
 type CompletedSteps = Map StepName StepResult
 
@@ -45,12 +45,13 @@ data BuildState
 
 newtype BuildRunningState = BuildRunningState {step :: StepName}
   deriving (Eq, Show)
+
 data BuildResult = BuildSucceeded | BuildFailed
   deriving (Eq, Show)
 
 buildResult :: CompletedSteps -> BuildResult
 buildResult steps
-  | List.all (== StepSucceeded) steps = BuildSucceeded
+  | all (== StepSucceeded) steps = BuildSucceeded
   | otherwise = BuildFailed
 
 buildHasNextStep :: Build -> Either BuildResult Step
@@ -62,23 +63,25 @@ buildHasNextStep Build{pipeline, completedSteps}
   result = buildResult completedSteps
   notComplited Step{name} = name `notElem` Map.keys completedSteps
 
-exitCodeToStepResult :: ContainerExitCode -> StepResult
-exitCodeToStepResult (ContainerExitCode n)
+exitCodeToStepResult :: Docker.ContainerExitCode -> StepResult
+exitCodeToStepResult (Docker.ContainerExitCode n)
   | n == 0 = StepSucceeded
-  | otherwise = StepFailed $ ContainerExitCode n
+  | otherwise = StepFailed $ Docker.ContainerExitCode n
 
-progress :: Build -> IO Build
-progress build =
+progress :: Docker.Service -> Build -> IO Build
+progress docker build =
   case build.state of
     BuildReady ->
       case buildHasNextStep build of
         Left result ->
-          pure $ build{state = BuildFinished result}
-        Right step ->
-          pure $ build{state = BuildRunning (BuildRunningState step.name)}
+          return $ build{state = BuildFinished result}
+        Right step -> do
+          let options = Docker.CreateContainerOptions{image = step.image}
+          docker.createContainer options >>= docker.startContainer
+          return $ build{state = BuildRunning (BuildRunningState step.name)}
     BuildRunning state ->
-      let result = exitCodeToStepResult $ ContainerExitCode 0 -- NOTE: For now assuming success
+      let result = exitCodeToStepResult $ Docker.ContainerExitCode 0 -- NOTE: For now assuming success
           completedSteps' = Map.insert state.step result build.completedSteps
-       in pure $ build{state = BuildReady, completedSteps = completedSteps'}
+       in return $ build{state = BuildReady, completedSteps = completedSteps'}
     BuildFinished _ ->
-      pure build
+      return build

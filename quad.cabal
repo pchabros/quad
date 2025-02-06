@@ -70,9 +70,11 @@ library
 
     -- LANGUAGE extensions used by modules in this package.
     default-extensions:
+        BlockArguments
         DuplicateRecordFields
         GeneralizedNewtypeDeriving
         NamedFieldPuns
+        NoFieldSelectors
         OverloadedRecordDot
         OverloadedStrings
     -- other-extensions:
@@ -104,9 +106,11 @@ executable quad
 
     -- LANGUAGE extensions used by modules in this package.
     default-extensions:
+        BlockArguments
         DuplicateRecordFields
         GeneralizedNewtypeDeriving
         NamedFieldPuns
+        NoFieldSelectors
         OverloadedRecordDot
         OverloadedStrings
     -- other-extensions:
@@ -132,9 +136,11 @@ test-suite quad-test
 
     -- Modules included in this executable, other than Main.
     default-extensions:
+        BlockArguments
         DuplicateRecordFields
         GeneralizedNewtypeDeriving
         NamedFieldPuns
+        NoFieldSelectors
         OverloadedRecordDot
         OverloadedStrings
     -- other-modules:
@@ -154,5 +160,6 @@ test-suite quad-test
     -- Test dependencies.
     build-depends:
         base ^>=4.18.2.1,
+        hspec,
         quad,
         rio

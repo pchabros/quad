@@ -36,11 +36,7 @@ instance Aeson.FromJSON ResponseBody where
         return (ResponseBody _id _warnings)
 
 parseResponse :: (Aeson.FromJSON a) => HTTP.Response ByteString -> a
-parseResponse res = do
-  let result = Aeson.eitherDecodeStrict $ HTTP.getResponseBody res
-  case result of
-    Left e -> error e
-    Right parsed -> parsed
+parseResponse res = either error id $ Aeson.eitherDecodeStrict $ HTTP.getResponseBody res
 
 createContainer :: CreateContainerOptions -> IO ContainerId
 createContainer options = do
@@ -73,3 +69,11 @@ startContainer (ContainerId _id) = do
           & HTTP.setRequestMethod "POST"
           & HTTP.setRequestPath (encodeUtf8 path)
   void $ HTTP.httpBS req
+
+data Service = Service
+  { createContainer :: CreateContainerOptions -> IO ContainerId
+  , startContainer :: ContainerId -> IO ()
+  }
+
+createService ::  Service
+createService =  Service{createContainer, startContainer}
