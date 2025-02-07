@@ -162,4 +162,5 @@ test-suite quad-test
         base ^>=4.18.2.1,
         hspec,
         quad,
-        rio
+        rio,
+        typed-process
