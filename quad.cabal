@@ -63,6 +63,7 @@ library
     exposed-modules: 
         Core,
         Docker,
+        Runner,
         Socket
 
     -- Modules included in this library but not exported.
