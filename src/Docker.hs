@@ -6,6 +6,23 @@ import qualified Network.HTTP.Simple as HTTP
 import RIO
 import qualified Socket
 
+data ContainerStatus
+  = ContainerRunning
+  | ContainerExited ContainerExitCode
+  | ContainerOther Text
+  deriving (Eq, Show)
+
+instance Aeson.FromJSON ContainerStatus where
+  parseJSON = Aeson.withObject "ContainerStatus" $ \obj -> do
+    state <- obj .: "State"
+    status <- state .: "Status"
+    case (status :: String) of
+      "running" -> return ContainerRunning
+      "exited" -> do
+        code <- state .: "ExitCode"
+        return $ ContainerExited (ContainerExitCode code)
+      _ -> return $ ContainerOther "unknown status"
+
 newtype Image = Image {name :: Text}
   deriving (Eq, Show)
 
@@ -15,32 +32,30 @@ newtype ContainerExitCode = ContainerExitCode Int
 newtype ContainerId = ContainerId Text
   deriving (Eq, Show, Aeson.FromJSON)
 
-exitCodeToInt :: ContainerExitCode -> Int
-exitCodeToInt (ContainerExitCode code) = code
-
 newtype CreateContainerOptions = CreateContainerOptions {image :: Image}
 
-data ResponseBody = ResponseBody
+type RequestBuilder = Text -> HTTP.Request
+
+data CreateContainerResponse = CreateContainerResponse
   { id :: ContainerId
   , warnings :: [String]
   }
   deriving (Show)
 
-instance Aeson.FromJSON ResponseBody where
+instance Aeson.FromJSON CreateContainerResponse where
   parseJSON =
     Aeson.withObject
-      "ResponseBody"
+      "CreateContainerResponse"
       $ \obj -> do
         _id <- obj .: "Id"
         _warnings <- obj .: "Warnings"
-        return (ResponseBody _id _warnings)
+        return (CreateContainerResponse _id _warnings)
 
 parseResponse :: (Aeson.FromJSON a) => HTTP.Response ByteString -> a
 parseResponse res = either error id $ Aeson.eitherDecodeStrict $ HTTP.getResponseBody res
 
-createContainer :: CreateContainerOptions -> IO ContainerId
-createContainer options = do
-  manager <- Socket.newManager "/var/run/docker.sock"
+createContainer :: RequestBuilder -> CreateContainerOptions -> IO ContainerId
+createContainer request options = do
   let body =
         Aeson.object
           [ ("Image", Aeson.toJSON options.image.name)
@@ -50,30 +65,43 @@ createContainer options = do
           , ("Entrypoint", Aeson.toJSON ["/bin/sh" :: String, "-c"])
           ]
   let req =
-        HTTP.defaultRequest
-          & HTTP.setRequestManager manager
+        request "/containers/create"
           & HTTP.setRequestMethod "POST"
-          & HTTP.setRequestPath "/v1.47/containers/create"
           & HTTP.setRequestBodyJSON body
   res <- HTTP.httpBS req
-  let ResponseBody{id = _id} = parseResponse res
+  let CreateContainerResponse{id = _id} = parseResponse res
   return _id
 
-startContainer :: ContainerId -> IO ()
-startContainer (ContainerId _id) = do
-  manager <- Socket.newManager "/var/run/docker.sock"
-  let path = "/v1.47/containers/" <> _id <> "/start"
-  let req =
-        HTTP.defaultRequest
-          & HTTP.setRequestManager manager
-          & HTTP.setRequestMethod "POST"
-          & HTTP.setRequestPath (encodeUtf8 path)
-  void $ HTTP.httpBS req
+startContainer :: RequestBuilder -> ContainerId -> IO ()
+startContainer request (ContainerId _id) = void $ HTTP.httpBS req
+ where
+  req = request path & HTTP.setRequestMethod "POST"
+  path = "/containers/" <> _id <> "/start"
+
+containerStatus :: RequestBuilder -> ContainerId -> IO ContainerStatus
+containerStatus request (ContainerId _id) = do
+  let path = "/containers/" <> _id <> "/json"
+  let req = request path & HTTP.setRequestMethod "GET"
+  res <- HTTP.httpBS req
+  return $ parseResponse res
 
 data Service = Service
   { createContainer :: CreateContainerOptions -> IO ContainerId
   , startContainer :: ContainerId -> IO ()
+  , containerStatus :: ContainerId -> IO ContainerStatus
   }
 
-createService ::  Service
-createService =  Service{createContainer, startContainer}
+createService :: IO Service
+createService = do
+  manager <- Socket.newManager "/var/run/docker.sock"
+  let request :: RequestBuilder
+      request path =
+        HTTP.defaultRequest
+          & HTTP.setRequestManager manager
+          & HTTP.setRequestPath (encodeUtf8 $ "/v1.47" <> path)
+  return
+    Service
+      { createContainer = createContainer request
+      , startContainer = startContainer request
+      , containerStatus = containerStatus request
+      }

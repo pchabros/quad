@@ -43,10 +43,13 @@ data BuildState
   | BuildFinished BuildResult
   deriving (Eq, Show)
 
-newtype BuildRunningState = BuildRunningState {step :: StepName}
+data BuildRunningState = BuildRunningState
+  { step :: StepName
+  , container :: Docker.ContainerId
+  }
   deriving (Eq, Show)
 
-data BuildResult = BuildSucceeded | BuildFailed
+data BuildResult = BuildSucceeded | BuildFailed | BuildUnexpectedState Text
   deriving (Eq, Show)
 
 buildResult :: CompletedSteps -> BuildResult
@@ -77,11 +80,21 @@ progress docker build =
           return $ build{state = BuildFinished result}
         Right step -> do
           let options = Docker.CreateContainerOptions{image = step.image}
-          docker.createContainer options >>= docker.startContainer
-          return $ build{state = BuildRunning (BuildRunningState step.name)}
-    BuildRunning state ->
-      let result = exitCodeToStepResult $ Docker.ContainerExitCode 0 -- NOTE: For now assuming success
-          completedSteps' = Map.insert state.step result build.completedSteps
-       in return $ build{state = BuildReady, completedSteps = completedSteps'}
+          container <- docker.createContainer options
+          docker.startContainer container
+          let state = BuildRunning BuildRunningState{step = step.name, container}
+          return build{state}
+    BuildRunning state -> do
+      status <- docker.containerStatus state.container
+      case status of
+        Docker.ContainerRunning -> return build
+        Docker.ContainerExited exitCode ->
+          let
+            result = exitCodeToStepResult exitCode
+            completedSteps = Map.insert state.step result build.completedSteps
+           in
+            return $ build{state = BuildReady, completedSteps}
+        Docker.ContainerOther other ->
+          return build{state = BuildFinished $ BuildUnexpectedState other}
     BuildFinished _ ->
       return build

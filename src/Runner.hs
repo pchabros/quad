@@ -17,7 +17,7 @@ createService docker =
     }
 
 prepareBuild :: Pipeline -> IO Build
-prepareBuild pipeline = do
+prepareBuild pipeline =
   return
     Build
       { pipeline = pipeline
