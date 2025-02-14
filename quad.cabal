@@ -74,6 +74,7 @@ library
         BlockArguments
         DuplicateRecordFields
         GeneralizedNewtypeDeriving
+        LambdaCase
         NamedFieldPuns
         NoFieldSelectors
         OverloadedRecordDot
@@ -110,6 +111,7 @@ executable quad
         BlockArguments
         DuplicateRecordFields
         GeneralizedNewtypeDeriving
+        LambdaCase
         NamedFieldPuns
         NoFieldSelectors
         OverloadedRecordDot
@@ -140,6 +142,7 @@ test-suite quad-test
         BlockArguments
         DuplicateRecordFields
         GeneralizedNewtypeDeriving
+        LambdaCase
         NamedFieldPuns
         NoFieldSelectors
         OverloadedRecordDot

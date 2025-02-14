@@ -78,22 +78,21 @@ progress docker build =
       case buildHasNextStep build of
         Left result ->
           return $ build{state = BuildFinished result}
-        Right step -> do
-          let options = Docker.CreateContainerOptions{image = step.image}
-          container <- docker.createContainer options
-          docker.startContainer container
-          let state = BuildRunning BuildRunningState{step = step.name, container}
-          return build{state}
-    BuildRunning state -> do
-      status <- docker.containerStatus state.container
-      case status of
+        Right step ->
+          docker.createContainer options >>= docker.startContainer >>= updatedBuild
+         where
+          options = Docker.CreateContainerOptions{image = step.image}
+          updatedBuild container =
+            return
+              build{state = BuildRunning BuildRunningState{step = step.name, container}}
+    BuildRunning state ->
+      docker.containerStatus state.container >>= \case
         Docker.ContainerRunning -> return build
         Docker.ContainerExited exitCode ->
-          let
-            result = exitCodeToStepResult exitCode
-            completedSteps = Map.insert state.step result build.completedSteps
-           in
-            return $ build{state = BuildReady, completedSteps}
+          return $ build{state = BuildReady, completedSteps}
+         where
+          completedSteps = Map.insert state.step result build.completedSteps
+          result = exitCodeToStepResult exitCode
         Docker.ContainerOther other ->
           return build{state = BuildFinished $ BuildUnexpectedState other}
     BuildFinished _ ->

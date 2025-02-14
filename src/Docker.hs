@@ -18,10 +18,8 @@ instance Aeson.FromJSON ContainerStatus where
     status <- state .: "Status"
     case (status :: String) of
       "running" -> return ContainerRunning
-      "exited" -> do
-        code <- state .: "ExitCode"
-        return $ ContainerExited (ContainerExitCode code)
-      _ -> return $ ContainerOther "unknown status"
+      "exited" -> ContainerExited . ContainerExitCode <$> state .: "ExitCode"
+      _ -> return (ContainerOther "unknown status")
 
 newtype Image = Image {name :: Text}
   deriving (Eq, Show)
@@ -46,10 +44,7 @@ instance Aeson.FromJSON CreateContainerResponse where
   parseJSON =
     Aeson.withObject
       "CreateContainerResponse"
-      $ \obj -> do
-        _id <- obj .: "Id"
-        _warnings <- obj .: "Warnings"
-        return (CreateContainerResponse _id _warnings)
+      \obj -> CreateContainerResponse <$> (obj .: "Id") <*> (obj .: "Warnings")
 
 parseResponse :: (Aeson.FromJSON a) => HTTP.Response ByteString -> a
 parseResponse res = either error id $ Aeson.eitherDecodeStrict $ HTTP.getResponseBody res
@@ -72,22 +67,21 @@ createContainer request options = do
   let CreateContainerResponse{id = _id} = parseResponse res
   return _id
 
-startContainer :: RequestBuilder -> ContainerId -> IO ()
-startContainer request (ContainerId _id) = void $ HTTP.httpBS req
+startContainer :: RequestBuilder -> ContainerId -> IO ContainerId
+startContainer request (ContainerId _id) = HTTP.httpBS req >> return (ContainerId _id)
  where
   req = request path & HTTP.setRequestMethod "POST"
   path = "/containers/" <> _id <> "/start"
 
 containerStatus :: RequestBuilder -> ContainerId -> IO ContainerStatus
-containerStatus request (ContainerId _id) = do
-  let path = "/containers/" <> _id <> "/json"
-  let req = request path & HTTP.setRequestMethod "GET"
-  res <- HTTP.httpBS req
-  return $ parseResponse res
+containerStatus request (ContainerId _id) = parseResponse <$> HTTP.httpBS req
+ where
+  path = "/containers/" <> _id <> "/json"
+  req = request path & HTTP.setRequestMethod "GET"
 
 data Service = Service
   { createContainer :: CreateContainerOptions -> IO ContainerId
-  , startContainer :: ContainerId -> IO ()
+  , startContainer :: ContainerId -> IO ContainerId
   , containerStatus :: ContainerId -> IO ContainerStatus
   }
 
