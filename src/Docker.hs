@@ -30,7 +30,9 @@ newtype ContainerExitCode = ContainerExitCode Int
 newtype ContainerId = ContainerId Text
   deriving (Eq, Show, Aeson.FromJSON)
 
-newtype CreateContainerOptions = CreateContainerOptions {image :: Image}
+newtype Script = Script {src :: Text}
+
+data CreateContainerOptions = CreateContainerOptions {image :: Image, script :: Script}
 
 type RequestBuilder = Text -> HTTP.Request
 
@@ -56,7 +58,8 @@ createContainer request options = do
           [ ("Image", Aeson.toJSON options.image.name)
           , ("Tty", Aeson.toJSON True)
           , ("Labels", Aeson.object [("quad", "")])
-          , ("Cmd", "echo hello")
+          , ("Cmd", "echo \"$QUAD_SCRIPT\" | /bin/sh")
+          , ("Env", Aeson.toJSON ["QUAD_SCRIPT=" <> options.script.src])
           , ("Entrypoint", Aeson.toJSON ["/bin/sh" :: String, "-c"])
           ]
   let req =

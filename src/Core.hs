@@ -4,29 +4,25 @@ import qualified Docker
 import RIO
 import qualified RIO.Map as Map
 import qualified RIO.NonEmpty as NE
+import qualified RIO.Text as Text
 
 newtype Pipeline = Pipeline {steps :: NonEmpty Step}
   deriving (Eq, Show)
 
 data Step = Step
   { name :: StepName
-  , commands :: NonEmpty Text
+  , commands :: Commands
   , image :: Docker.Image
   }
   deriving (Eq, Show)
+
+type Commands = NonEmpty Text
 
 newtype StepName = StepName Text
   deriving (Eq, Show, Ord)
 
 data StepResult = StepFailed Docker.ContainerExitCode | StepSucceeded
   deriving (Eq, Show)
-
--- NOTE: Why not record syntax (getter for free)?
-stepNameToText :: StepName -> Text
-stepNameToText (StepName text) = text
-
-imageToText :: Docker.Image -> Text
-imageToText (Docker.Image text) = text
 
 type CompletedSteps = Map StepName StepResult
 
@@ -39,7 +35,7 @@ data Build = Build
 
 data BuildState
   = BuildReady
-  | BuildRunning BuildRunningState -- NOTE: Why not just Step.name?
+  | BuildRunning BuildRunningState
   | BuildFinished BuildResult
   deriving (Eq, Show)
 
@@ -51,6 +47,9 @@ data BuildRunningState = BuildRunningState
 
 data BuildResult = BuildSucceeded | BuildFailed | BuildUnexpectedState Text
   deriving (Eq, Show)
+
+parseCommands :: Commands -> Docker.Script
+parseCommands commands = Docker.Script $ Text.unlines $ ["set -ex"] <> NE.toList commands
 
 buildResult :: CompletedSteps -> BuildResult
 buildResult steps
@@ -81,7 +80,11 @@ progress docker build =
         Right step ->
           docker.createContainer options >>= docker.startContainer >>= updatedBuild
          where
-          options = Docker.CreateContainerOptions{image = step.image}
+          options =
+            Docker.CreateContainerOptions
+              { image = step.image
+              , script = parseCommands step.commands
+              }
           updatedBuild container =
             return
               build{state = BuildRunning BuildRunningState{step = step.name, container}}
