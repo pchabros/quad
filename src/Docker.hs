@@ -13,7 +13,7 @@ data ContainerStatus
   deriving (Eq, Show)
 
 instance Aeson.FromJSON ContainerStatus where
-  parseJSON = Aeson.withObject "ContainerStatus" $ \obj -> do
+  parseJSON = Aeson.withObject "ContainerStatus" \obj -> do
     state <- obj .: "State"
     status <- state .: "Status"
     case (status :: String) of
@@ -32,7 +32,11 @@ newtype ContainerId = ContainerId Text
 
 newtype Script = Script {src :: Text}
 
-data CreateContainerOptions = CreateContainerOptions {image :: Image, script :: Script}
+data CreateContainerOptions = CreateContainerOptions
+  { image :: Image
+  , script :: Script
+  , volume :: Volume
+  }
 
 type RequestBuilder = Text -> HTTP.Request
 
@@ -48,11 +52,17 @@ instance Aeson.FromJSON CreateContainerResponse where
       "CreateContainerResponse"
       \obj -> CreateContainerResponse <$> (obj .: "Id") <*> (obj .: "Warnings")
 
+newtype Volume = Volume {name :: Text} deriving (Eq, Show)
+
+instance Aeson.FromJSON Volume where
+  parseJSON = Aeson.withObject "Volume" $ fmap Volume <$> (.: "Name")
+
 parseResponse :: (Aeson.FromJSON a) => HTTP.Response ByteString -> a
 parseResponse res = either error id $ Aeson.eitherDecodeStrict $ HTTP.getResponseBody res
 
 createContainer :: RequestBuilder -> CreateContainerOptions -> IO ContainerId
 createContainer request options = do
+  let bind = options.volume.name <> ":/app"
   let body =
         Aeson.object
           [ ("Image", Aeson.toJSON options.image.name)
@@ -61,6 +71,8 @@ createContainer request options = do
           , ("Cmd", "echo \"$QUAD_SCRIPT\" | /bin/sh")
           , ("Env", Aeson.toJSON ["QUAD_SCRIPT=" <> options.script.src])
           , ("Entrypoint", Aeson.toJSON ["/bin/sh" :: String, "-c"])
+          , ("WorkingDir", "/app")
+          , ("HostConfig", Aeson.object [("Binds", Aeson.toJSON [bind])])
           ]
   let req =
         request "/containers/create"
@@ -82,10 +94,20 @@ containerStatus request (ContainerId _id) = parseResponse <$> HTTP.httpBS req
   path = "/containers/" <> _id <> "/json"
   req = request path & HTTP.setRequestMethod "GET"
 
+createVolume :: RequestBuilder -> IO Volume
+createVolume request = parseResponse <$> HTTP.httpBS req
+ where
+  req =
+    request "/volumes/create"
+      & HTTP.setRequestMethod "POST"
+      & HTTP.setRequestBodyJSON body
+  body = Aeson.object [("Labels", Aeson.object [("quad", "")])]
+
 data Service = Service
   { createContainer :: CreateContainerOptions -> IO ContainerId
   , startContainer :: ContainerId -> IO ContainerId
   , containerStatus :: ContainerId -> IO ContainerStatus
+  , createVolume :: IO Volume
   }
 
 createService :: IO Service
@@ -101,4 +123,5 @@ createService = do
       { createContainer = createContainer request
       , startContainer = startContainer request
       , containerStatus = containerStatus request
+      , createVolume = createVolume request
       }

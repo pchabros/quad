@@ -12,18 +12,20 @@ data Service = Service
 createService :: Docker.Service -> Service
 createService docker =
   Service
-    { prepareBuild = prepareBuild
+    { prepareBuild = prepareBuild docker
     , runBuild = runBuild docker
     }
 
-prepareBuild :: Pipeline -> IO Build
-prepareBuild pipeline =
-  return
-    Build
-      { pipeline = pipeline
-      , state = BuildReady
-      , completedSteps = mempty
-      }
+prepareBuild :: Docker.Service -> Pipeline -> IO Build
+prepareBuild docker pipeline =
+  docker.createVolume >>= \volume ->
+    return
+      Build
+        { pipeline = pipeline
+        , state = BuildReady
+        , completedSteps = mempty
+        , volume
+        }
 
 runBuild :: Docker.Service -> Build -> IO Build
 runBuild docker build = do

@@ -30,6 +30,7 @@ data Build = Build
   { pipeline :: Pipeline
   , state :: BuildState
   , completedSteps :: CompletedSteps
+  , volume :: Docker.Volume
   }
   deriving (Eq, Show)
 
@@ -48,8 +49,8 @@ data BuildRunningState = BuildRunningState
 data BuildResult = BuildSucceeded | BuildFailed | BuildUnexpectedState Text
   deriving (Eq, Show)
 
-parseCommands :: Commands -> Docker.Script
-parseCommands commands = Docker.Script $ Text.unlines $ ["set -ex"] <> NE.toList commands
+commandsToScript :: Commands -> Docker.Script
+commandsToScript commands = Docker.Script $ Text.unlines $ ["set -ex"] <> NE.toList commands
 
 buildResult :: CompletedSteps -> BuildResult
 buildResult steps
@@ -78,16 +79,17 @@ progress docker build =
         Left result ->
           return $ build{state = BuildFinished result}
         Right step ->
-          docker.createContainer options >>= docker.startContainer >>= updatedBuild
+          docker.createContainer options
+            >>= docker.startContainer <&> updateBuild
          where
           options =
             Docker.CreateContainerOptions
               { image = step.image
-              , script = parseCommands step.commands
+              , script = commandsToScript step.commands
+              , volume = build.volume
               }
-          updatedBuild container =
-            return
-              build{state = BuildRunning BuildRunningState{step = step.name, container}}
+          updateBuild container =
+            build{state = BuildRunning BuildRunningState{step = step.name, container}}
     BuildRunning state ->
       docker.containerStatus state.container >>= \case
         Docker.ContainerRunning -> return build
