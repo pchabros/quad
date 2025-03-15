@@ -46,7 +46,8 @@ library
         aeson,
         http-client,
         http-conduit,
-        network
+        network,
+        time
 
     hs-source-dirs: 
         src
