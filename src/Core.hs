@@ -96,7 +96,8 @@ progress docker build =
         Left result ->
           return $ build{state = BuildFinished result}
         Right step ->
-          docker.createContainer options
+          docker.pullImage step.image
+            >> docker.createContainer options
             >>= docker.startContainer <&> updateBuild
          where
           options =

@@ -16,7 +16,7 @@ makeStep :: Text -> Text -> [Text] -> Step
 makeStep name image commands =
   Step
     { name = StepName name
-    , image = Image image
+    , image = Image image "latest"
     , commands = NE.fromList commands
     }
 
@@ -84,6 +84,17 @@ testLogCollection runner = do
   Map.elems result.completedSteps `shouldBe` [StepSucceeded, StepSucceeded]
   readMVar expected >>= (`shouldBe` Set.empty)
 
+testImagePull :: Runner.Service -> IO ()
+testImagePull runner =
+  Process.readProcessStdout "docker rmi -f busybox"
+    >> ( runner.prepareBuild $
+          makePipeline [makeStep "First step" "busybox" ["date"]]
+       )
+    >>= runner.runBuild emptyHooks
+    >>= \result -> do
+      result.state `shouldBe` BuildFinished BuildSucceeded
+      Map.elems result.completedSteps `shouldBe` [StepSucceeded]
+
 main :: IO ()
 main = hspec do
   docker <- runIO Docker.createService
@@ -98,6 +109,8 @@ main = hspec do
         testSharedVolume runner
       it "should collect logs" do
         testLogCollection runner
+      it "should pull image" do
+        testImagePull runner
 
 cleanupDocker :: IO ()
 cleanupDocker =

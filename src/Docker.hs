@@ -5,6 +5,7 @@ import qualified Data.Aeson as Aeson
 import qualified Data.Time.Clock.POSIX as Time
 import qualified Network.HTTP.Simple as HTTP
 import RIO
+import RIO.Text (unpack)
 import qualified Socket
 
 data ContainerStatus
@@ -22,8 +23,11 @@ instance Aeson.FromJSON ContainerStatus where
       "exited" -> ContainerExited . ContainerExitCode <$> state .: "ExitCode"
       _ -> return (ContainerOther "unknown status")
 
-newtype Image = Image {name :: Text}
-  deriving (Eq, Show)
+data Image = Image {name :: Text, tag :: Text}
+  deriving (Eq)
+
+instance Show Image where
+  show image = unpack $ image.name <> ":" <> image.tag
 
 newtype ContainerExitCode = ContainerExitCode Int
   deriving (Eq, Show)
@@ -72,7 +76,7 @@ createContainer request options = do
   let bind = options.volume.name <> ":/app"
   let body =
         Aeson.object
-          [ ("Image", Aeson.toJSON options.image.name)
+          [ ("Image", Aeson.toJSON $ show options.image)
           , ("Tty", Aeson.toJSON True)
           , ("Labels", Aeson.object [("quad", "")])
           , ("Cmd", "echo \"$QUAD_SCRIPT\" | /bin/sh")
@@ -123,12 +127,19 @@ fetchLogs request options = do
   res <- HTTP.httpBS $ request url
   return $ HTTP.getResponseBody res
 
+pullImage :: RequestBuilder -> Image -> IO ()
+pullImage request image = void $ HTTP.httpBS req
+ where
+  req = request url & HTTP.setRequestMethod "POST"
+  url = "/images/create?tag=" <> image.tag <> "&fromImage=" <> image.name
+
 data Service = Service
   { createContainer :: CreateContainerOptions -> IO ContainerId
   , startContainer :: ContainerId -> IO ContainerId
   , containerStatus :: ContainerId -> IO ContainerStatus
   , createVolume :: IO Volume
   , fetchLogs :: FetchLogsOptions -> IO ByteString
+  , pullImage :: Image -> IO ()
   }
 
 createService :: IO Service
@@ -146,4 +157,5 @@ createService = do
       , containerStatus = containerStatus request
       , createVolume = createVolume request
       , fetchLogs = fetchLogs request
+      , pullImage = pullImage request
       }
