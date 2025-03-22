@@ -16,11 +16,15 @@ common language
 common dependencies
     build-depends:   
         base ^>=4.18.2.1,
-        rio
+        rio,
+        yaml
 
 common extensions
     default-extensions:
         BlockArguments
+        DeriveAnyClass
+        DeriveGeneric
+        DerivingStrategies
         DuplicateRecordFields
         GADTs
         GeneralizedNewtypeDeriving
@@ -29,6 +33,7 @@ common extensions
         NoFieldSelectors
         OverloadedRecordDot
         OverloadedStrings
+        StrictData
 
 library
     import:
