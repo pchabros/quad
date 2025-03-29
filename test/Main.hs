@@ -1,14 +1,19 @@
 module Main (main) where
 
+import qualified Agent
+import qualified Control.Concurrent.Async as Async
 import Core
 import qualified Data.Yaml as Yaml
 import Docker
+import qualified JobHandler
+import qualified JobHandler.Memory
 import RIO hiding (log)
 import qualified RIO.ByteString as ByteString
 import qualified RIO.Map as Map
 import qualified RIO.NonEmpty.Partial as NE
 import qualified RIO.Set as Set
 import qualified Runner
+import qualified Server
 import qualified System.Process.Typed as Process
 import Test.Hspec
 import Prelude hiding (log)
@@ -25,7 +30,23 @@ makePipeline :: [Step] -> Pipeline
 makePipeline steps = Pipeline{steps = NE.fromList steps}
 
 emptyHooks :: Runner.Hooks
-emptyHooks = Runner.Hooks{logCollected = \_ -> pure ()}
+emptyHooks =
+  Runner.Hooks
+    { logCollected = \_ -> pure ()
+    , buildUpdated = \_ -> pure ()
+    }
+
+checkBuild :: JobHandler.Service -> BuildNumber -> IO ()
+checkBuild service number = loop
+ where
+  loop = do
+    (Just job) <- service.findJob number
+    case job.state of
+      (JobHandler.JobScheduled build) -> do
+        case build.state of
+          BuildFinished state -> state `shouldBe` BuildSucceeded
+          _ -> loop
+      _ -> loop
 
 testRunSuccess :: Runner.Service -> IO ()
 testRunSuccess runner =
@@ -73,7 +94,7 @@ testLogCollection runner = do
           case ByteString.breakSubstring word log.output of
             (_, "") -> pure ()
             _ -> modifyMVar_ expected $ pure . Set.delete word
-  let hooks = Runner.Hooks{logCollected = onLog}
+  let hooks = Runner.Hooks{logCollected = onLog, buildUpdated = \_ -> pure ()}
   build <-
     runner.prepareBuild $
       makePipeline
@@ -103,6 +124,25 @@ testYamlDecoding runner = do
   result <- runner.runBuild emptyHooks build
   result.state `shouldBe` BuildFinished BuildSucceeded
 
+testServerAgent :: Runner.Service -> IO ()
+testServerAgent runner = do
+  handler <- JobHandler.Memory.createService
+
+  serverThread <- Async.async (Server.run (Server.Config 9000) handler)
+  Async.link serverThread
+
+  agentThread <-
+    Async.async (Agent.run (Agent.Config "http://localhost:9000") runner)
+  Async.link agentThread
+
+  handler.queueJob pipeline >>= checkBuild handler
+
+  traverse_ Async.cancel [serverThread, agentThread]
+ where
+  pipeline =
+    makePipeline
+      [makeStep "agent-test" "busybox" ["echo hello", "echo from agent"]]
+
 main :: IO ()
 main = hspec do
   docker <- runIO Docker.createService
@@ -121,6 +161,8 @@ main = hspec do
         testImagePull runner
       it "should decode pipelines" do
         testYamlDecoding runner
+      it "should run server and agent" do
+        testServerAgent runner
 
 cleanupDocker :: IO ()
 cleanupDocker =

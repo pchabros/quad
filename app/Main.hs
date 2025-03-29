@@ -1,6 +1,6 @@
 module Main where
 
--- import RIO
+import RIO
 
 main :: IO ()
 main = pure ()

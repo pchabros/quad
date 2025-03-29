@@ -1,5 +1,6 @@
 module Core where
 
+import qualified Codec.Serialise as Serialise
 import qualified Data.Aeson as Aeson
 import qualified Data.Time.Clock.POSIX as Time
 import qualified Docker
@@ -8,13 +9,23 @@ import qualified RIO.Map as Map
 import qualified RIO.NonEmpty as NE
 import qualified RIO.Text as Text
 
+data Build = Build
+  { pipeline :: Pipeline
+  , state :: BuildState
+  , completedSteps :: CompletedSteps
+  , volume :: Docker.Volume
+  }
+  deriving (Eq, Show, Generic, Serialise.Serialise)
+
 newtype Pipeline = Pipeline {steps :: Steps}
   deriving (Generic)
-  deriving newtype (Eq, Show)
+  deriving newtype (Eq, Show, Serialise.Serialise)
 
 instance Aeson.FromJSON Pipeline where
   parseJSON =
     Aeson.genericParseJSON Aeson.defaultOptions{Aeson.unwrapUnaryRecords = False}
+
+type Steps = NonEmpty Step
 
 data Step = Step
   { name :: StepName
@@ -22,42 +33,36 @@ data Step = Step
   , image :: Docker.Image
   }
   deriving (Eq, Show, Generic)
-  deriving anyclass (Aeson.FromJSON)
+  deriving anyclass (Aeson.FromJSON, Serialise.Serialise)
 
-type Steps = NonEmpty Step
+newtype StepName = StepName Text
+  deriving newtype (Eq, Show, Ord, Aeson.FromJSON, Serialise.Serialise)
 
 type Commands = NonEmpty Text
 
-newtype StepName = StepName Text
-  deriving newtype (Eq, Show, Ord, Aeson.FromJSON)
-
-data StepResult = StepFailed Docker.ContainerExitCode | StepSucceeded
-  deriving (Eq, Show)
-
 type CompletedSteps = Map StepName StepResult
 
-data Build = Build
-  { pipeline :: Pipeline
-  , state :: BuildState
-  , completedSteps :: CompletedSteps
-  , volume :: Docker.Volume
-  }
-  deriving (Eq, Show)
+data StepResult = StepFailed Docker.ContainerExitCode | StepSucceeded
+  deriving (Eq, Show, Generic, Serialise.Serialise)
 
 data BuildState
   = BuildReady
   | BuildRunning BuildRunningState
   | BuildFinished BuildResult
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic, Serialise.Serialise)
 
 data BuildRunningState = BuildRunningState
   { step :: StepName
   , container :: Docker.ContainerId
   }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic, Serialise.Serialise)
 
 data BuildResult = BuildSucceeded | BuildFailed | BuildUnexpectedState Text
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic, Serialise.Serialise)
+
+newtype BuildNumber = BuildNumber {unBuildNumber :: Int}
+  deriving (Eq, Ord, Show, Generic)
+  deriving newtype (Serialise.Serialise)
 
 type LogCollection = Map StepName CollectionStatus
 
@@ -71,7 +76,7 @@ data Log = Log
   { output :: ByteString
   , step :: StepName
   }
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic, Serialise.Serialise)
 
 commandsToScript :: Commands -> Docker.Script
 commandsToScript commands = Docker.Script $ Text.unlines $ ["set -ex"] <> NE.toList commands

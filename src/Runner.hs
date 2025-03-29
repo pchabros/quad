@@ -1,12 +1,12 @@
 module Runner where
 
-import Control.Concurrent (threadDelay)
 import Core
-import Data.Foldable (traverse_)
 import qualified Docker
+import RIO
 
-newtype Hooks = Hooks
+data Hooks = Hooks
   { logCollected :: Log -> IO ()
+  , buildUpdated :: Build -> IO ()
   }
 
 data Service = Service
@@ -41,6 +41,7 @@ runBuild docker hooks build = do
     (newCollection, logs) <- Core.collectLogs docker collection build'
     traverse_ hooks.logCollected logs
     newBuild <- Core.progress docker build'
+    hooks.buildUpdated newBuild
     case newBuild.state of
       BuildFinished _ -> return newBuild
       _ -> do
