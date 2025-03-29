@@ -1,9 +1,8 @@
 module Runner where
 
-import Control.Concurrent (threadDelay)
 import Core
-import Data.Foldable (traverse_)
 import qualified Docker
+import RIO
 
 newtype Hooks = Hooks
   { logCollected :: Log -> IO ()

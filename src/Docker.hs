@@ -1,5 +1,6 @@
 module Docker where
 
+import qualified Codec.Serialise as Serialise
 import Data.Aeson ((.:))
 import qualified Data.Aeson as Aeson
 import qualified Data.Time.Clock.POSIX as Time
@@ -25,7 +26,7 @@ instance Aeson.FromJSON ContainerStatus where
       _ -> return (ContainerOther "unknown status")
 
 data Image = Image {name :: Text, tag :: Text}
-  deriving (Eq)
+  deriving (Eq, Generic, Serialise.Serialise)
 
 instance Aeson.FromJSON Image where
   parseJSON = Aeson.withText "parse-image" \text -> case splitOn ":" text of
@@ -36,10 +37,11 @@ instance Show Image where
   show image = unpack $ image.name <> ":" <> image.tag
 
 newtype ContainerExitCode = ContainerExitCode Int
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic)
+  deriving newtype (Serialise.Serialise)
 
 newtype ContainerId = ContainerId {id :: Text}
-  deriving newtype (Eq, Show, Aeson.FromJSON)
+  deriving newtype (Eq, Show, Aeson.FromJSON, Serialise.Serialise)
 
 newtype Script = Script {src :: Text}
 
@@ -63,7 +65,9 @@ instance Aeson.FromJSON CreateContainerResponse where
       "CreateContainerResponse"
       \obj -> CreateContainerResponse <$> (obj .: "Id") <*> (obj .: "Warnings")
 
-newtype Volume = Volume {name :: Text} deriving (Eq, Show)
+newtype Volume = Volume {name :: Text}
+  deriving (Eq, Show, Generic)
+  deriving newtype (Serialise.Serialise)
 
 instance Aeson.FromJSON Volume where
   parseJSON = Aeson.withObject "Volume" $ fmap Volume <$> (.: "Name")
